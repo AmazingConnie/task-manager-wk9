@@ -73,6 +73,15 @@ def list_tasks(status=None, priority=None):
     return query.order_by(Task.id).all()
 
 
+def search_tasks(query):
+    """Return tasks whose title contains the query, newest first."""
+    query = (query or "").strip()
+    if not query:
+        raise ValidationError("query is required")
+    matches = Task.query.filter(Task.title.contains(query, autoescape=True))
+    return matches.order_by(Task.id.desc()).all()
+
+
 def update_task(task_id, **fields):
     """Update the given fields of a task and return it."""
     unknown = set(fields) - UPDATABLE_FIELDS
