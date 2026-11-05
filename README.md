@@ -14,6 +14,7 @@ COMP.4600/5300 AI Agents with Claude Code. Starter code for the Week 9 drills.
 | Method | Path | What it does |
 | --- | --- | --- |
 | GET | /tasks | List tasks. Optional query parameters: status, priority |
+| GET | /tasks/search | Search task titles, newest first. Required query parameter: query |
 | POST | /tasks | Create a task. JSON body: title (required), description, priority, due_date |
 | GET | /tasks/<id> | Get one task |
 | PATCH | /tasks/<id> | Update fields of a task |
