@@ -28,6 +28,10 @@ def _validate_priority(priority):
 def _validate_status(status):
     if status not in TaskStatus.ALL:
         raise ValidationError(f"status must be one of {', '.join(TaskStatus.ALL)}")
+    # The legacy "done" value is still accepted from old clients, but is stored and
+    # queried as the canonical "completed" so stats and filters see one value.
+    if status == TaskStatus.DONE:
+        return TaskStatus.COMPLETED
     return status
 
 
@@ -106,7 +110,7 @@ def update_task(task_id, **fields):
 def complete_task(task_id):
     """Mark a task as finished and return it."""
     task = get_task(task_id)
-    task.status = TaskStatus.DONE
+    task.status = TaskStatus.COMPLETED
     db.session.commit()
     return task
 

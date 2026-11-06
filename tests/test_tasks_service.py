@@ -273,9 +273,23 @@ class TestUpdateTask:
             update_task(task_id, priority=priority)
         assert exc.value.message == PRIORITY_INVALID
 
-    @pytest.mark.parametrize("status", TaskStatus.ALL)
+    @pytest.mark.parametrize(
+        "status", [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED]
+    )
     def test_each_allowed_status_is_accepted(self, status):
         assert update_task(create_task("t").id, status=status).status == status
+
+    def test_legacy_done_status_is_stored_as_completed(self):
+        task_id = create_task("t").id
+
+        assert update_task(task_id, status=TaskStatus.DONE).status == TaskStatus.COMPLETED
+        assert reload(task_id).status == TaskStatus.COMPLETED
+
+    def test_legacy_done_status_filter_matches_completed_tasks(self):
+        task = create_task("t")
+        complete_task(task.id)
+
+        assert list_tasks(status=TaskStatus.DONE) == [task]
 
     @pytest.mark.parametrize("status", [None, *BAD_STATUSES])
     def test_invalid_status_is_rejected(self, status):
@@ -339,10 +353,6 @@ class TestUpdateTask:
 
 
 class TestCompleteTask:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="complete_task writes the legacy TaskStatus.DONE, which task_summary does not count",
-    )
     def test_status_becomes_completed(self):
         task_id = create_task("t").id
 
