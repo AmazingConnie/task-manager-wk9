@@ -1,0 +1,865 @@
+ ▐▛███▛█   Claude Code v2.1.319
+▝▜██████▀  Opus 5.5 · Claude Pro
+ ▝▝   ▝▝   ~/COMP5300/Week9/task-manager-wk9
+
+
+❯ Write a regression test for this bug report in tests/test_bug17.py, using the 
+  client fixture:                                                               
+                                                                                
+  BUG-17: Completed tasks don't count as completed                              
+  Steps:                                                                        
+  1. POST /tasks with {"title": "Write report"} -> id 1                         
+  2. POST /tasks with {"title": "Buy milk"} -> id 2                             
+  3. POST /tasks/1/complete                                                     
+  4. GET /stats                                                                 
+  5. GET /tasks?status=completed                                                
+     Expected: step 4 shows completed: 1 and completion_rate: 50.0;             
+     step 5 returns task 1.                                                     
+     Actual: step 4 shows completed: 0 and completion_rate: 0.0;                
+     step 5 returns [].                                                         
+                                                                                
+  The test must follow the steps and assert the Expected results.               
+  Do not fix anything yet. Run the test and show me that it fails.              
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Write(tests/test_bug17.py)
+  ⎿  Wrote 32 lines to tests/test_bug17.py
+       1 """Regression test for BUG-17: completed tasks don't count as co
+         mpleted."""
+       2 
+       3 
+       4 def test_bug17_completed_task_counts_in_stats_and_status_filter(
+         client):
+       5     """A completed task is counted by /stats and returned by ?st
+         atus=completed."""
+       6     # Step 1
+       7     resp = client.post("/tasks", json={"title": "Write report"})
+     … +25 lines (ctrl+o to expand)
+
+● Bash(pytest -q tests/test_bug17.py 2>&1 | tail -30)
+  ⎿  client = <FlaskClient <Flask 'app'>>
+
+         def test_bug17_completed_task_counts_in_stats_and_status_filter(cl
+     … +27 lines (ctrl+o to expand)
+  ⎿  Updated bug17.txt (+1 -0)
+      1 +A1                                                              
+      2  Write a regression test for this bug report in tests/test_bug17.
+         py,
+      3  using the client fixture:
+      4  
+
+● I wrote the regression test in tests/test_bug17.py, ran it, and it fails as
+  the bug report predicts. I haven't changed any app code.
+
+  What the test does: it follows the five steps in order using the client
+  fixture. It checks that the two tasks get ids 1 and 2, completes task 1, then
+  asserts the Expected results:
+  - /stats returns completed == 1 and completion_rate == 50.0
+  - /tasks?status=completed returns only task 1
+
+  Result of pytest -q tests/test_bug17.py:
+  >       assert stats["completed"] == 1
+  E       assert 0 == 1
+
+  tests/test_bug17.py:25: AssertionError
+  FAILED tests/test_bug17.py::test_bug17_completed_task_counts_in_stats_and_stat
+  us_filter
+  1 failed in 0.19s
+
+  Steps 1–3 pass: both tasks are created and the complete call returns 200. The
+  test fails at step 4 with completed: 0, which matches the "Actual" in the
+  report. Pytest stops at the first failed assertion, so the completion_rate
+  check and the step 5 status-filter check didn't run. They will run once the
+  stats count is fixed.
+
+✻ Baked for 27s · done Thursday 8:46 PM
+
+❯ /rename pa9-session 
+  ⎿  Session renamed to: pa9-session
+
+❯ The test in tests/test_bug17.py fails:                                        
+  client = <FlaskClient <Flask 'app'>>                                          
+                                                                                
+  def test_bug17_completed_task_counts_in_stats_and_status_filter(client):      
+      """A completed task is counted by /stats and returned by                  
+  ?status=completed."""                                                         
+      # Step 1                                                                  
+      resp = client.post("/tasks", json={"title": "Write report"})              
+      assert resp.status_code == 201                                            
+      first_id = resp.get_json()["id"]                                          
+      assert first_id == 1                                                      
+                                                                                
+      # Step 2                                                                  
+      resp = client.post("/tasks", json={"title": "Buy milk"})                  
+      assert resp.status_code == 201                                            
+      assert resp.get_json()["id"] == 2                                         
+                                                                                
+      # Step 3                                                                  
+      resp = client.post(f"/tasks/{first_id}/complete")                         
+      assert resp.status_code == 200                                            
+                                                                                
+      # Step 4                                                                  
+      resp = client.get("/stats")                                               
+      assert resp.status_code == 200                                            
+      stats = resp.get_json()                                                   
+  >       assert stats["completed"] == 1                                        
+  E       assert 0 == 1                                                         
+                                                                                
+  tests/test_bug17.py:25: AssertionError                                        
+                                                                                
+  Trace the path from POST /tasks/<id>/complete to GET /stats and to            
+  GET /tasks?status=completed. Explain the root cause and list every file       
+  involved. Then propose a fix and its side effects, including what happens     
+  to tasks already stored with the old value.                                   
+  Do not change any files yet.                                                  
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● I traced the path below. No files have been changed.
+
+  The trace
+
+  1. POST /tasks/1/complete
+  - app/routes/tasks.py:51 complete_task() calls the service function.
+  - app/services/tasks.py:106-111 complete_task() sets task.status = 
+    TaskStatus.DONE, which writes the string "done" to the database.
+
+  2. GET /stats
+  - app/routes/stats.py:11 calls task_summary().
+  - app/services/stats.py:25-28 counts only tasks where task.status == 
+    TaskStatus.COMPLETED ("completed"). Task 1 holds "done", so completed = 0
+    and completion_rate = 0.0.
+  - app/services/stats.py:31-34 has a second effect: the overdue check also
+    compares against COMPLETED. A task finished through /complete that has a
+    past due date is still counted as overdue.
+
+  3. GET /tasks?status=completed
+  - app/routes/tasks.py:11-15 passes status="completed" to list_tasks().
+  - app/services/tasks.py:66-73 _validate_status accepts the value, and
+    filter_by(status="completed") does an exact match. That doesn't match
+    "done", so the result is [].
+
+  Root cause
+
+  app/models.py:8-17 defines two values that mean "finished":
+  - COMPLETED = "completed" is the current, canonical value.
+  - DONE = "done" is a legacy value from the old mobile client. It's kept only
+    "so old rows still validate".
+
+  complete_task writes the legacy value, but every reader (stats, overdue,
+  status filter) only looks for the canonical value. It's a one-word bug in one
+  service function, with the other code paths working as designed.
+
+  Files involved
+
+  ┌─────────────────────────────────────┬────────────────────────────────────┐
+  │                File                 │                Role                │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ app/services/tasks.py               │ Bug site: complete_task writes     │
+  │                                     │ DONE                               │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ app/models.py                       │ Defines both COMPLETED and the     │
+  │                                     │ legacy DONE                        │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ app/services/stats.py               │ Counts only COMPLETED (completed   │
+  │                                     │ count, rate, overdue)              │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ app/routes/tasks.py                 │ /complete and ?status= routes      │
+  │                                     │ (thin, pass values through)        │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ app/routes/stats.py                 │ /stats route (thin)                │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ tests/test_bug17.py                 │ New regression test, currently     │
+  │                                     │ failing                            │
+  ├─────────────────────────────────────┼────────────────────────────────────┤
+  │ tests/test_tasks_service.py:341-351 │ Already has a strict xfail         │
+  │                                     │ documenting this exact bug         │
+  └─────────────────────────────────────┴────────────────────────────────────┘
+
+  Proposed fix
+
+  Main fix (one line): in app/services/tasks.py, change complete_task to write
+  TaskStatus.COMPLETED. New completions will then show up in stats and in the
+  status filter, and stop counting as overdue.
+
+  Tasks already stored with "done": the one-line fix does nothing for them.
+  Every task completed before the fix, and any task the old mobile client sets
+  to "done" through PATCH, would still be missing from stats and from
+  ?status=completed, and would still count as overdue. There are two ways to
+  handle them, and I'd do both:
+
+  1. One-off data migration: run UPDATE task SET status = 'completed' WHERE 
+     status = 'done';. The repo has no migrations folder (no Alembic), so this
+     would be a small script or a manual SQL step against the real database.
+     Tests use a fresh in-memory database, so they aren't affected.
+  2. Convert "done" on write: in _validate_status, change DONE to COMPLETED
+     before saving. The old mobile client can keep sending "done", but it never
+     reaches the database. Keep DONE in TaskStatus.ALL so those requests still
+     validate.
+
+  A read-side alternative is to make stats and list_tasks treat {COMPLETED, 
+  DONE} as finished. It works without touching data, but every future query
+  would have to remember both values, which is how this bug happened. I'd skip
+  it.
+
+  Side effects
+
+  - The strict xfail test will break.
+    tests/test_tasks_service.py::TestCompleteTask::test_status_becomes_completed
+    has strict=True, so once the fix makes it pass, pytest reports
+    XPASS(strict) as a failure. The xfail marker has to be removed. CLAUDE.md
+    says not to modify tests/ when implementing a fix, so you'll need to approve
+    that edit or make it yourself.
+  - The API response changes. POST /tasks/<id>/complete will return "status": 
+    "completed" instead of "done". Any client that checks for "done" (likely the
+    old mobile client) will see the new value.
+  - ?status=done will return nothing. After the migration and the write-side
+    conversion, no rows hold "done", so that filter returns [] instead of the
+    legacy tasks. It still validates, so it doesn't error.
+  - Dashboard numbers will rise. After the migration, the completed count and
+    completion rate go up for existing data, and the overdue count drops. That's
+    correct, but anyone watching the dashboard will see a jump.
+  - Tests to add: under the convention that new behaviour gets tests, cover
+    "PATCH with status="done" is stored as completed" and a check on the
+    migration.
+
+  Shall I go ahead with the main fix plus the write-side conversion, and remove
+  the xfail marker? Or would you rather handle the test file yourself?
+
+✻ Sautéed for 29s · done Thursday 8:58 PM
+
+❯ Implement the fix you proposed. Do not modify tests/test_bug17.py. Run the    
+  full test suite and show me the result.                                       
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(python - <<'EOF'
+      p='app/services/tasks.py'…)
+  ⎿  diff --git a/app/services/tasks.py b/app/services/tasks.py
+     index 105d62e..c137739 100644
+     --- a/app/services/tasks.py
+     … +46 lines (ctrl+o to expand)
+  ⎿  Updated app/services/tasks.py (+5 -1)
+      28  def _validate_status(status):
+      29      if status not in TaskStatus.ALL:
+      30          raise ValidationError(f"status must be one of {', '.joi
+          n(TaskStatus.ALL)}")
+      31 +    # The legacy "done" value is still accepted from old client
+         +s, but is stored and                                           
+      32 +    # queried as the canonical "completed" so stats and filters
+         + see one value.                                                
+      33 +    if status == TaskStatus.DONE:                              
+      34 +        return TaskStatus.COMPLETED                            
+      35      return status
+      36  
+      37  
+     ...
+      110  def complete_task(task_id):
+      111      """Mark a task as finished and return it."""
+      112      task = get_task(task_id)
+      109 -    task.status = TaskStatus.DONE                             
+      113 +    task.status = TaskStatus.COMPLETED                        
+      114      db.session.commit()
+      115      return task
+      116  
+  ⎿  Created scripts/migrate_done_to_completed.py (+32 -0)
+       1 +"""One-off data migration for BUG-17: rewrite legacy "done" sta
+         +tuses to "completed".                                          
+       2 +                                                               
+       3 +Usage (uses DATABASE_URL, or sqlite:///tasks.db by default):   
+       4 +                                                               
+       5 +    python scripts/migrate_done_to_completed.py                
+       6 +                                                               
+       7 +Safe to run more than once; later runs update zero rows.       
+       8 +"""                                                            
+       9 +                                                               
+      10 +import os                                                      
+      11 +import sys                                                     
+      12 +                                                               
+      13 +sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.absp
+         +ath(__file__))))                                               
+      14 +                                                               
+      15 +from app import create_app  # noqa: E402                       
+      16 +from app.extensions import db  # noqa: E402                    
+      17 +from app.models import Task, TaskStatus  # noqa: E402          
+      18 +                                                               
+      19 +                                                               
+      20 +def main():                                                    
+      21 +    """Update every task with the legacy DONE status to COMPLET
+         +ED and report the count."""                                    
+      22 +    app = create_app()                                         
+      23 +    with app.app_context():                                    
+      24 +        updated = Task.query.filter_by(status=TaskStatus.DONE).
+         +update(                                                        
+      25 +            {"status": TaskStatus.COMPLETED}, synchronize_sessi
+         +on=False                                                       
+      26 +        )                                                      
+      27 +        db.session.commit()                                    
+      28 +        print(f"Updated {updated} task(s) from '{TaskStatus.DON
+         +E}' to '{TaskStatus.COMPLETED}'.")                             
+      29 +                                                               
+      30 +                                                               
+      31 +if __name__ == "__main__":                                     
+      32 +    main()                                                     
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I made the fix and the BUG-17 test now passes, but the full suite has 2 
+  failures. One I expected. The other shows that part of my proposal was wrong.
+
+  Changes (nothing in tests/ was touched)
+
+  - app/services/tasks.py
+    - complete_task now writes TaskStatus.COMPLETED instead of DONE. This is the
+      bug fix.
+    - _validate_status still accepts "done", but converts it to "completed".
+      This affects both PATCH and the ?status= filter.
+  - scripts/migrate_done_to_completed.py (new): a one-off script that changes
+    stored done rows to completed. You can safely run it more than once. I
+    haven't run it against tasks.db.
+
+  Full suite: pytest -q
+
+  FAILED tests/test_tasks_service.py::TestUpdateTask::test_each_allowed_status_i
+  s_accepted[done]
+      assert update_task(create_task("t").id, status=status).status == status
+      AssertionError: assert 'completed' == 'done'
+  FAILED 
+  tests/test_tasks_service.py::TestCompleteTask::test_status_becomes_completed
+      [XPASS(strict)] complete_task writes the legacy TaskStatus.DONE, which 
+  task_summary does not count
+  2 failed, 127 passed in 2.78s
+
+  tests/test_bug17.py passes. ruff check and ruff format --check are clean.
+
+  What the failures mean
+
+  1. test_status_becomes_completed (XPASS strict): this is the side effect I
+     flagged. The test was marked as an expected failure because of this bug.
+     Now that the bug is fixed it passes, and strict=True makes pytest count
+     that as a failure. The fix is to delete the @pytest.mark.xfail(...)
+     decorator at tests/test_tasks_service.py:341-344.
+  2. test_each_allowed_status_is_accepted[done]: I missed this when I proposed
+     the change. An existing test requires that PATCH status="done" gets stored
+     as "done", so converting "done" on write breaks a rule the tests already
+     set. It's an addition to the bug fix, not part of it.
+
+  Your call
+
+  - Option A (recommended): undo the _validate_status conversion and keep only
+    the one-line complete_task fix, plus the migration script for existing rows.
+    That fixes BUG-17 within the current tests. Only failure 1 is left, and
+    removing the xfail decorator fixes it.
+  - Option B: keep the conversion. Both test files in
+    tests/test_tasks_service.py would need edits: remove the xfail and change
+    the done case to expect "completed".
+
+  Either way, the remaining failures can only be fixed by editing
+  tests/test_tasks_service.py, and CLAUDE.md says not to modify tests/ here.
+  Tell me which option you want, and whether I should make the test edit or
+  leave it to you.
+
+✻ Worked for 41s · done Thursday 9:08 PM
+
+❯ Go with option B instead.                                                     
+  ⎿  3 skills available
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The xfail decorator was already gone — looks like you removed it. That leaves
+  one test edit: the done case.
+
+● Update(tests/test_tasks_service.py)
+  ⎿  Added 15 lines, removed 1 line
+      273              update_task(task_id, priority=priority)
+      274          assert exc.value.message == PRIORITY_INVALID
+      275  
+      276 -    @pytest.mark.parametrize("status", TaskStatus.ALL)        
+      276 +    @pytest.mark.parametrize(                                 
+      277 +        "status", [TaskStatus.TODO, TaskStatus.IN_PROGRESS, Ta
+          +skStatus.COMPLETED]                                           
+      278 +    )                                                         
+      279      def test_each_allowed_status_is_accepted(self, status):
+      280          assert update_task(create_task("t").id, status=status)
+           .status == status
+      281  
+      282 +    def test_legacy_done_status_is_stored_as_completed(self): 
+      283 +        task_id = create_task("t").id                         
+      284 +                                                              
+      285 +        assert update_task(task_id, status=TaskStatus.DONE).st
+          +atus == TaskStatus.COMPLETED                                  
+      286 +        assert reload(task_id).status == TaskStatus.COMPLETED 
+      287 +                                                              
+      288 +    def test_legacy_done_status_filter_matches_completed_tasks
+          +(self):                                                       
+      289 +        task = create_task("t")                               
+      290 +        complete_task(task.id)                                
+      291 +                                                              
+      292 +        assert list_tasks(status=TaskStatus.DONE) == [task]   
+      293 +                                                              
+      294      @pytest.mark.parametrize("status", [None, *BAD_STATUSES])
+      295      def test_invalid_status_is_rejected(self, status):
+      296          task_id = create_task("t").id
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● My new tests fail, and the diff shows app/services/tasks.py has fewer changes
+  than I made. Checking:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Someone outside this session has removed the xfail decorator and the "done" to
+  "completed" conversion in _validate_status, so I'm restoring that conversion
+  for Option B.
+
+● Update(app/services/tasks.py)
+  ⎿  Added 4 lines
+      28  def _validate_status(status):
+      29      if status not in TaskStatus.ALL:
+      30          raise ValidationError(f"status must be one of {', '.joi
+          n(TaskStatus.ALL)}")
+      31 +    # The legacy "done" value is still accepted from old client
+         +s, but is stored and                                           
+      32 +    # queried as the canonical "completed" so stats and filters
+         + see one value.                                                
+      33 +    if status == TaskStatus.DONE:                              
+      34 +        return TaskStatus.COMPLETED                            
+      35      return status
+      36  
+      37  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Option B is in place and the full suite passes: 130 passed. ruff check and
+  ruff format --check are clean.
+
+  pytest -q
+  130 passed in 2.62s
+
+  Between my last turn and this one, the files were edited outside this session.
+  The xfail decorator was gone, and so was the "done" → "completed" conversion.
+  That's the Option A setup. Option B needs the conversion, so I put it back.
+  If you removed it on purpose, tell me and I'll take it out again.
+
+  Changes
+
+  app/services/tasks.py
+  - complete_task now writes TaskStatus.COMPLETED. This is the BUG-17 fix.
+  - _validate_status still accepts "done", but changes it to "completed". So
+    PATCH status="done" saves "completed", and ?status=done returns completed
+    tasks.
+
+  tests/test_tasks_service.py (you approved these edits by choosing B)
+  - test_each_allowed_status_is_accepted now covers only todo, in_progress and
+    completed. Its old done case expected "done" to be stored as-is, which is no
+    longer true.
+  - I added test_legacy_done_status_is_stored_as_completed. It checks that PATCH
+    with "done" saves and reloads as "completed".
+  - I added test_legacy_done_status_filter_matches_completed_tasks. It checks
+    that the ?status=done filter returns completed tasks. I said last time that
+    this filter would return [], but that was wrong: with the conversion it
+    still finds the tasks.
+  - The xfail decorator on test_status_becomes_completed was already removed. I
+    didn't remove it.
+
+  tests/test_bug17.py is unchanged, and it passes.
+
+  scripts/migrate_done_to_completed.py is the one-off script that changes old
+  "done" rows to "completed". I haven't run it. When you want to fix your local
+  tasks.db, run python scripts/migrate_done_to_completed.py.
+
+  Nothing is committed yet. Want me to commit this as fix: complete_task writes 
+  canonical completed status (BUG-17)?
+
+✻ Baked for 47s · done Friday 5:59 PM
+
+❯ do i still need the script for migrating done to completed?                   
+
+  Ran 1 shell command (ctrl+o to expand)
+● For this repo as it stands, no. You only need the script if a real database
+  somewhere already has "done" rows in it.
+
+  Why the code fix doesn't cover old rows: the fix only changes values as
+  they're written or queried. A row that already holds "done" stays that way,
+  and the app still handles it wrongly:
+  - /stats doesn't count it as completed, and still counts it as overdue if its
+    due date has passed.
+  - ?status=completed doesn't return it.
+  - ?status=done doesn't return it either, because that filter is now converted
+    to "completed". So those rows can't be found through the status filter at
+    all.
+
+  Why you don't need it here: I looked and there's no database file in the
+  project. There's no tasks.db and no instance/ folder. The app creates tasks.db
+  on first run, and every row it writes now goes through the fix, so it can
+  never hold "done". The tests use a fresh in-memory database each time.
+
+  When you would need it: if you run the app against a database that was used
+  before this fix, such as an existing tasks.db or whatever DATABASE_URL points
+  to. Any task completed through /complete, or set to "done" by the old mobile
+  client, would have the old value. Run the script once on that database and
+  you're done. Running it again just updates 0 rows.
+
+  If this project has no real deployment with old data, which seems likely for a
+  Week 9 drill, you can delete scripts/. If you'd rather keep it, it's a small
+  record of how to fix old data. Do you want me to remove it before committing?
+
+✻ Cogitated for 15s · done Friday 6:02 PM
+
+❯ /context 
+  ⎿  Context Usage
+     ⛀ ⛀ ⛀ ⛀ ⛀   Opus 5.5
+     ⛁ ⛁ ⛀ ⛶ ⛶   claude-opus-5-5
+     ⛶ ⛶ ⛶ ⛶ ⛶   66.2k/1m tokens (7%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ 
+     ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category
+     ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 2.7k tokens (0.3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System tools: 5.8k tokens (0.6%)
+     ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ MCP server instructions: 717 tokens (0.1%)
+     ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Memory files: 523 tokens (0.1%)
+     ⛶ ⛶ ⛶ ⛝ ⛝   ⛁ Skills: 6k tokens (0.6%)
+                 ⛁ Messages: 50.5k tokens (5.1%)
+                 ⛶ Free space: 900.8k (90.1%)
+                 ⛝ Autocompact buffer: 33k tokens (3.3%)
+
+     Auto-compact window: 1m tokens
+
+     MCP tools · /mcp (loaded on-demand)
+     └ 32 tools · 0 tokens
+
+     Memory files · /memory
+     └ 1 file · 523 tokens
+
+     Skills · /skills
+     └ 30 skills · 6k tokens
+
+     /context all to expand
+
+❯ Add an unused import, import os, at the top of @app/services/stats.py         
+  ⎿  Read app/services/stats.py (49 lines)
+
+● Update(app/services/stats.py)
+  ⎿  Added 1 line
+      1  """Summary statistics for the dashboard."""
+      2  
+      3 +import os                                                       
+      4  from datetime import date
+      5  
+      6  from app.models import Task, TaskStatus
+  ⎿  PostToolUse:Edit hook returned blocking error
+  ⎿  [cd "$CLAUDE_PROJECT_DIR" && { ruff check . && python -m pytest -x -q 
+     --tb=short; } 1>&2 || exit 2]: F401 [*] `os` imported but unused
+      --> app/services/stats.py:3:8
+       |
+     1 | """Summary statistics for the dashboard."""
+     2 |
+     3 | import os
+       |        ^^
+     4 | from datetime import date
+       |
+     help: Remove unused import: `os`
+       |
+     2 |
+       - import os
+     3 | from datetime import date
+       |
+
+     Found 1 error.
+     [*] 1 fixable with `--fix`.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I added import os at line 3 of app/services/stats.py, as you asked. Your
+  project's PostToolUse hook rejected the edit, because it runs ruff check . and
+  then pytest after every edit:
+
+  F401 [*] `os` imported but unused
+   --> app/services/stats.py:3:8
+  Found 1 error.
+
+  The edit is still in the file, but the repo now fails lint. Because ruff exits
+  with an error, the hook never got to run pytest. While the import is there,
+  every later edit will trigger the same hook error.
+
+  I've left it in place since you asked for it explicitly. My guess is this is a
+  test of the hook. Should I remove it, or keep it for now?
+
+✻ Baked for 14s · done Friday 7:05 PM
+
+❯ remove it                                                                     
+
+● Update(app/services/stats.py)
+  ⎿  Removed 1 line
+      1  """Summary statistics for the dashboard."""
+      2  
+      3 -import os                                                       
+      3  from datetime import date
+      4  
+      5  from app.models import Task, TaskStatus
+
+● I removed the import os line, so app/services/stats.py is back to how it was.
+  The PostToolUse hook ran after the edit without reporting an error, which
+  means ruff check . and the full pytest run both passed.
+
+✻ Cooked for 10s · done Friday 7:09 PM
+
+❯ Write characterization tests for task_summary in tests/test_stats.py.         
+  They must pass against the current code, with no changes to app/.             
+  Pass a fixed today date. Cover: an empty database, each status count,         
+  the completion rate with rounding (1 of 3 completed), and the overdue         
+  rules (due yesterday, due today, due tomorrow, no due date, and a             
+  past-due task that is completed). Also cover the default today and            
+  the GET /stats route.                                                         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Write(tests/test_stats.py)
+  ⎿  Wrote 178 lines to tests/test_stats.py
+       1 """Characterization tests for task_summary in app/services/stats
+         .py and the GET /stats route."""
+       2 
+       3 from datetime import date, timedelta
+       4 
+       5 import pytest
+       6 
+       7 import app.services.stats as stats_module
+       8 from app.models import TaskStatus
+       9 from app.services.stats import task_summary
+     … +169 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I added tests/test_stats.py with 18 tests, and they all pass against the
+  current code. I didn't change anything in app/.
+
+  pytest -q tests/test_stats.py   → 18 passed
+  pytest -q                       → 148 passed
+  coverage of app/services/stats.py → 100%, no missing lines
+  ruff check / format --check     → clean
+
+  What's covered
+
+  Every service test passes a fixed today=date(2026, 6, 15).
+
+  - Empty database: task_summary returns all zeros with completion_rate: 0.0.
+  - Status counts:
+    - A mixed set of 3 todo, 2 in-progress and 1 completed task gives the right
+      total and per-status counts.
+    - A parametrized test checks that a single task is counted only under its
+      own status.
+  - Completion rate:
+    - 1 of 3 completed gives 33.3, which shows the result is rounded to one
+      decimal.
+    - All completed gives 100.0 and none completed gives 0.0.
+  - Overdue rules:
+    - A task due yesterday counts as overdue.
+    - Tasks due today, due tomorrow, or with no due date don't.
+    - A completed task that's past due doesn't count.
+    - I added one extra case: an in-progress task that's past due does count.
+    - A final test mixes all of these, and only 1 of the 5 tasks counts as
+      overdue.
+  - Default today: the test replaces date inside app.services.stats with a
+    subclass whose today() returns the fixed date. It then calls task_summary()
+    with no argument and checks the overdue count.
+  - GET /stats:
+    - On an empty database it returns 200 with the zero summary.
+    - With three tasks created through the API (one completed, one past due) it
+      returns the exact expected JSON.
+
+  These tests describe the code as it works now, after the BUG-17 fix. A task
+  that completes through /complete is counted, because it's now stored as
+  completed. I didn't add a test for stats on old "done" rows, which still
+  aren't counted as completed and still count as overdue. You can't create such
+  a row through the service any more, so the test would have to insert it
+  straight into the database. Let me know if you want that behaviour covered
+  too.
+
+✻ Crunched for 48s · done Friday 9:27 PM
+
+❯ Refactor task_summary in @app/services/stats.py to remove the duplicated      
+  loops. The return value must stay identical for every input.                  
+  Change only @app/services/stats.py. Do not modify any file in tests/.         
+  ⎿  Read app/services/stats.py (49 lines)
+
+● Update(app/services/stats.py)
+  ⎿  Added 12 lines, removed 27 lines
+      12      tasks = Task.query.all()
+      13      total = len(tasks)
+      14  
+      15 -    todo = 0                                                   
+      16 -    for task in tasks:                                         
+      17 -        if task.status == TaskStatus.TODO:                     
+      18 -            todo += 1                                          
+      15 +    status_counts = Counter(task.status for task in tasks)     
+      16 +    completed = status_counts[TaskStatus.COMPLETED]            
+      17 +    overdue = sum(                                             
+      18 +        1                                                      
+      19 +        for task in tasks                                      
+      20 +        if task.due_date is not None                           
+      21 +        and task.due_date < today                              
+      22 +        and task.status != TaskStatus.COMPLETED                
+      23 +    )                                                          
+      24 +    completion_rate = round(100 * completed / total, 1) if tota
+         +l > 0 else 0.0                                                 
+      25  
+      20 -    in_progress = 0                                            
+      21 -    for task in tasks:                                         
+      22 -        if task.status == TaskStatus.IN_PROGRESS:              
+      23 -            in_progress += 1                                   
+      24 -                                                               
+      25 -    completed = 0                                              
+      26 -    for task in tasks:                                         
+      27 -        if task.status == TaskStatus.COMPLETED:                
+      28 -            completed += 1                                     
+      29 -                                                               
+      30 -    overdue = 0                                                
+      31 -    for task in tasks:                                         
+      32 -        if task.due_date is not None and task.due_date < today:
+      33 -            if task.status != TaskStatus.COMPLETED:            
+      34 -                overdue += 1                                   
+      35 -                                                               
+      36 -    if total > 0:                                              
+      37 -        completion_rate = round(100 * completed / total, 1)    
+      38 -    else:                                                      
+      39 -        completion_rate = 0.0                                  
+      40 -                                                               
+      26      return {
+      27          "total": total,
+      43 -        "todo": todo,                                          
+      44 -        "in_progress": in_progress,                            
+      28 +        "todo": status_counts[TaskStatus.TODO],                
+      29 +        "in_progress": status_counts[TaskStatus.IN_PROGRESS],  
+      30          "completed": completed,
+      31          "overdue": overdue,
+      32          "completion_rate": completion_rate,
+  ⎿  PostToolUse:Edit hook returned blocking error
+  ⎿  [cd "$CLAUDE_PROJECT_DIR" && { ruff check . && python -m pytest -x -q 
+     --tb=short; } 1>&2 || exit 2]: F821 Undefined name `Counter`
+       --> app/services/stats.py:15:21
+        |
+     13 |     total = len(tasks)
+     14 |
+     15 |     status_counts = Counter(task.status for task in tasks)
+        |                     ^^^^^^^
+     16 |     completed = status_counts[TaskStatus.COMPLETED]
+     17 |     overdue = sum(
+        |
+
+     Found 1 error.
+
+● Update(app/services/stats.py)
+  ⎿  Added 1 line
+      1  """Summary statistics for the dashboard."""
+      2  
+      3 +from collections import Counter                                 
+      4  from datetime import date
+      5  
+      6  from app.models import Task, TaskStatus
+
+● The hook error came from the first edit, before the Counter import was added
+  in the second. Now I'll confirm the current file, then compare the new version
+  against the original on random inputs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I refactored task_summary so it no longer loops over the tasks four times.
+  Only app/services/stats.py changed, and its return value is identical to the
+  original's for every input I tested.
+
+  The new version
+
+  status_counts = Counter(task.status for task in tasks)
+  completed = status_counts[TaskStatus.COMPLETED]
+  overdue = sum(
+      1
+      for task in tasks
+      if task.due_date is not None
+      and task.due_date < today
+      and task.status != TaskStatus.COMPLETED
+  )
+  completion_rate = round(100 * completed / total, 1) if total > 0 else 0.0
+  - A single Counter pass replaces the three separate status-counting loops. A
+    Counter returns 0 for any status that's missing, which matches what the old
+    loops returned.
+  - The overdue loop is now one generator expression, with the nested if
+    statements merged into a single condition.
+  - The if/else for the completion rate is now a one-line conditional
+    expression.
+  - I added from collections import Counter at the top.
+
+  Checks
+
+  - ruff check and ruff format --check are clean.
+  - pytest -q passes: 148 tests. That includes the 18 characterization tests in
+    tests/test_stats.py.
+  - I also ran a one-off script from the scratchpad that compared this version
+    with the original from HEAD. It used 500 random databases with 0–12 tasks
+    each. Each task got a random status, including legacy "done" and an unknown
+    "weird" value, and a random due date within ±3 days, or none. In all 500
+    cases the result matched exactly: values, key order and value types.
+
+  That last check matters because odd values like "done" still aren't counted
+  under any status. They still count as overdue when past due, exactly as
+  before.
+
+  You saw a hook error for an undefined Counter. That came from the first of my
+  two edits, because the import went in with the second one. The final file
+  passes the hook's checks.
+
+✻ Sautéed for 42s · done Friday 11:16 PM
+
+❯ /quality                                                                      
+  ⎿  1 skill available
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● All three steps passed: 148 tests pass and total coverage is 97%.
+
+  1. Format check
+  $ ruff format --check .
+  24 files already formatted
+
+  2. Lint
+  $ ruff check .
+  All checks passed!
+
+  3. Tests with coverage
+  $ pytest -q --cov=app --cov-report=term-missing
+  148 passed in 4.35s
+
+  Name                       Stmts   Miss  Cover   Missing
+  --------------------------------------------------------
+  app/__init__.py               19      0   100%
+  app/errors.py                 14      0   100%
+  app/extensions.py              2      0   100%
+  app/models.py                 19      0   100%
+  app/routes/__init__.py         0      0   100%
+  app/routes/stats.py            6      0   100%
+  app/routes/tasks.py           32      5    84%   39, 44-45, 55-56
+  app/services/__init__.py       0      0   100%
+  app/services/stats.py         13      0   100%
+  app/services/tasks.py         81      0   100%
+  --------------------------------------------------------
+  TOTAL                        186      5    97%
+
+  ┌────────────────┬───────────────────────────────────────┬───────────────┐
+  │      Step      │                Command                │    Result     │
+  ├────────────────┼───────────────────────────────────────┼───────────────┤
+  │ 1. Format      │ ruff format --check .                 │ PASS          │
+  │ check          │                                       │               │
+  ├────────────────┼───────────────────────────────────────┼───────────────┤
+  │ 2. Lint        │ ruff check .                          │ PASS          │
+  ├────────────────┼───────────────────────────────────────┼───────────────┤
+  │ 3. Tests +     │ pytest -q --cov=app                   │ PASS (148     │
+  │ coverage       │ --cov-report=term-missing             │ passed)       │
+  ├────────────────┼───────────────────────────────────────┼───────────────┤
+  │ Total coverage │                                       │ 97%           │
+  └────────────────┴───────────────────────────────────────┴───────────────┘
+
+  The only uncovered lines are three route handlers in app/routes/tasks.py that
+  no test calls over HTTP: GET /tasks/<id> (line 39), PATCH /tasks/<id> (44–45)
+  and DELETE /tasks/<id> (55–56). Their service functions are fully tested. If
+  you want app/ at 100%, a few route tests in the style of tests/test_smoke.py
+  would cover them.
+✻ Churned for 19s · done Friday 11:31 PM
